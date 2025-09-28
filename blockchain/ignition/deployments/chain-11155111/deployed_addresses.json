@@ -1,0 +1,5 @@
+{
+  "MicropaymentModule#MockUSDC": "0x46ae9Bc5EdE0c537b0123157F1AdB640BdB2f043",
+  "MicropaymentModule#YieldVault": "0x44e67dff66bE2c09f2D885c96194da7ba4CC6E65",
+  "MicropaymentModule#StreamingWallet": "0xcd1D5A122cF274506bA80BE2143f013A4af69be8"
+}

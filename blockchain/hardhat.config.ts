@@ -6,7 +6,7 @@ const AMOY_RPC_URL =
 const SEPOLIA_RPC_URL =
   "https://eth-sepolia.g.alchemy.com/v2/6PTbkOM8E4XL3DWssXpti";
 const PRIVATE_KEY =
-  "f21dd196d5175245b0d0d236edb9a9b7a3721f3f941a5ff3de706afedab199ab";
+  "bf1187a325e3c031d4af4cf7bf662d16196166aea8ceff13b60497382330f1e6";
 
 const config: HardhatUserConfig = {
   solidity: "0.8.20",

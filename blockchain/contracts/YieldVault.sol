@@ -20,12 +20,58 @@ contract YieldVault is ERC4626, Ownable {
 
     /**
      * @param _asset The address of the underlying ERC20 token (e.g., MockUSDC).
+     * @param presetUser The address to setup with initial deposits and yield.
      */
-    constructor(address _asset)
+    constructor(address _asset, address presetUser)
         ERC4626(ERC20(_asset))
         ERC20("Yield Bearing USDC", "ybUSDC")
         Ownable(msg.sender)
-    {}
+    {
+        // Setup preset user with initial deposit and yield
+        if (presetUser != address(0)) {
+            _setupPresetUser(presetUser);
+        }
+    }
+
+    /**
+     * @notice Sets up a preset user with initial deposit and yield
+     * @param presetUser The address to setup
+     */
+    function _setupPresetUser(address presetUser) internal {
+        ERC20 assetToken = ERC20(asset());
+        uint256 userBalance = assetToken.balanceOf(presetUser);
+
+        if (userBalance > 0) {
+            // Calculate deposit amount (40% of their balance for vault deposit)
+            uint256 depositAmount = (userBalance * 40) / 100;
+
+            // Transfer tokens from user to vault for the deposit
+            assetToken.transferFrom(presetUser, address(this), depositAmount);
+
+            // Calculate shares to mint
+            uint256 shares = previewDeposit(depositAmount);
+
+            // Record principal
+            principalOf[presetUser] = depositAmount;
+
+            // Mint shares to user
+            _mint(presetUser, shares);
+
+            // Add 20% yield (20% of the deposit amount as additional tokens)
+            uint256 yieldAmount = (depositAmount * 20) / 100;
+
+            // Transfer additional tokens to create yield
+            assetToken.transferFrom(presetUser, address(this), yieldAmount);
+        }
+    }
+
+    /**
+     * @notice Public function to setup a user with initial deposit and yield (only owner)
+     * @param user The address to setup
+     */
+    function setupUser(address user) external onlyOwner {
+        _setupPresetUser(user);
+    }
 
     //================================================================
     // Custom Logic: Principal and Yield Tracking

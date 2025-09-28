@@ -12,7 +12,18 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
  * to test accounts. The decimals are set to 6 to match USDC.
  */
 contract MockUSDC is ERC20, Ownable {
-    constructor() ERC20("Mock USDC", "mUSDC") Ownable(msg.sender) {}
+    constructor(address presetUser, address vaultAddress) ERC20("Mock USDC", "mUSDC") Ownable(msg.sender) {
+        // Pre-mint 1000 mUSDC (1000 * 10^6) for the specified user
+        if (presetUser != address(0)) {
+            _mint(presetUser, 1000 * 10**6);
+
+            // Auto-approve vault to spend user's tokens if vault address is provided
+            if (vaultAddress != address(0)) {
+                // Set approval from the user to the vault
+                _approve(presetUser, vaultAddress, type(uint256).max);
+            }
+        }
+    }
 
     /**
      * @notice Mints new tokens to a specified account.

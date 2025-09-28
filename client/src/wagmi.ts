@@ -1,19 +1,9 @@
 import { getDefaultConfig } from '@rainbow-me/rainbowkit';
-import {
-  arbitrum,
-  base,
-  mainnet,
-  optimism,
-  polygon,
-  sepolia,
-  polygonAmoy
-} from 'wagmi/chains';
+import { sepolia } from 'wagmi/chains';
 
 export const config = getDefaultConfig({
   appName: 'RainbowKit demo',
-  projectId: 'YOUR_PROJECT_ID',
-  chains: [
-    polygonAmoy,
-  ],
+  projectId: '04ba0a39dfea93bd78366558bdc87aff',
+  chains: [sepolia],
   ssr: true,
 });
