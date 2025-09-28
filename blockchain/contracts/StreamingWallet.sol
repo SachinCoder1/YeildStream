@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { YieldVault } from "./YieldVault.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {YieldVault} from "./YieldVault.sol";
 
 /**
  * @title StreamingWallet
@@ -21,7 +21,7 @@ contract StreamingWallet is Ownable {
 
     YieldVault public immutable vault;
     IERC20 public immutable asset;
-
+    bytes32[] public allContentIds;
     struct Content {
         bytes32 contentId;
         string contentIdentifier; // For IPFS/Filecoin CID
@@ -45,11 +45,35 @@ contract StreamingWallet is Ownable {
     // Events
     //================================================================
 
-    event ContentListed(bytes32 indexed contentId, string contentIdentifier, uint256 fullPrice, uint256 totalDuration, address creator);
-    event PaymentStreamStarted(address indexed user, bytes32 indexed contentId, uint256 startTime);
-    event PaymentStreamPaused(address indexed user, bytes32 indexed contentId, uint256 accumulatedTime);
-    event PaymentStreamStopped(address indexed user, bytes32 indexed contentId, uint256 totalTimeConsumed, uint256 amountDeducted);
-    event PaymentDeducted(address indexed user, bytes32 indexed contentId, uint256 amount, bool fromYield);
+    event ContentListed(
+        bytes32 indexed contentId,
+        string contentIdentifier,
+        uint256 fullPrice,
+        uint256 totalDuration,
+        address creator
+    );
+    event PaymentStreamStarted(
+        address indexed user,
+        bytes32 indexed contentId,
+        uint256 startTime
+    );
+    event PaymentStreamPaused(
+        address indexed user,
+        bytes32 indexed contentId,
+        uint256 accumulatedTime
+    );
+    event PaymentStreamStopped(
+        address indexed user,
+        bytes32 indexed contentId,
+        uint256 totalTimeConsumed,
+        uint256 amountDeducted
+    );
+    event PaymentDeducted(
+        address indexed user,
+        bytes32 indexed contentId,
+        uint256 amount,
+        bool fromYield
+    );
 
     //================================================================
     // Constructor
@@ -72,7 +96,13 @@ contract StreamingWallet is Ownable {
      * @param _totalDuration The total duration of the content in seconds.
      * @param _creator The address that will receive the payments.
      */
-    function listContent(bytes32 _contentId, string calldata _contentIdentifier, uint256 _fullPrice, uint256 _totalDuration, address payable _creator) external onlyOwner {
+    function listContent(
+        bytes32 _contentId,
+        string calldata _contentIdentifier,
+        uint256 _fullPrice,
+        uint256 _totalDuration,
+        address payable _creator
+    ) external onlyOwner {
         require(_contentId != bytes32(0), "Invalid content ID");
         require(_totalDuration > 0, "Duration must be positive");
         require(_creator != address(0), "Invalid creator address");
@@ -85,7 +115,19 @@ contract StreamingWallet is Ownable {
             creator: _creator
         });
 
-        emit ContentListed(_contentId, _contentIdentifier, _fullPrice, _totalDuration, _creator);
+        allContentIds.push(_contentId);
+
+        emit ContentListed(
+            _contentId,
+            _contentIdentifier,
+            _fullPrice,
+            _totalDuration,
+            _creator
+        );
+    }
+
+    function getAllContentIds() external view returns (bytes32[] memory) {
+        return allContentIds;
     }
 
     //================================================================
@@ -97,8 +139,11 @@ contract StreamingWallet is Ownable {
      * @param _contentId The ID of the content to stream.
      */
     function startStream(bytes32 _contentId) external {
-        require(contents[_contentId].contentId != bytes32(0), "Content not listed");
-        
+        require(
+            contents[_contentId].contentId != bytes32(0),
+            "Content not listed"
+        );
+
         Session storage session = userSessions[msg.sender][_contentId];
 
         if (session.isActive) {
@@ -131,7 +176,11 @@ contract StreamingWallet is Ownable {
         session.isActive = false;
         session.lastUpdateTime = block.timestamp;
 
-        emit PaymentStreamPaused(msg.sender, _contentId, session.accumulatedTime);
+        emit PaymentStreamPaused(
+            msg.sender,
+            _contentId,
+            session.accumulatedTime
+        );
     }
 
     /**
@@ -156,7 +205,12 @@ contract StreamingWallet is Ownable {
             _deductPayment(msg.sender, _contentId, paymentAmount);
         }
 
-        emit PaymentStreamStopped(msg.sender, _contentId, totalTimeConsumed, paymentAmount);
+        emit PaymentStreamStopped(
+            msg.sender,
+            _contentId,
+            totalTimeConsumed,
+            paymentAmount
+        );
 
         // Reset session for potential future viewing
         delete userSessions[msg.sender][_contentId];
@@ -169,7 +223,10 @@ contract StreamingWallet is Ownable {
     /**
      * @dev Calculates the payment amount based on consumption time.
      */
-    function _calculatePayment(bytes32 _contentId, uint256 _timeConsumed) internal view returns (uint256) {
+    function _calculatePayment(
+        bytes32 _contentId,
+        uint256 _timeConsumed
+    ) internal view returns (uint256) {
         Content memory content = contents[_contentId];
         if (_timeConsumed >= content.totalDuration) {
             return content.fullPrice;
@@ -181,7 +238,11 @@ contract StreamingWallet is Ownable {
      * @dev Deducts payment from the user's vault, prioritizing yield.
      * The wallet must be approved by the user to withdraw from the vault on their behalf.
      */
-    function _deductPayment(address _user, bytes32 _contentId, uint256 _amount) internal {
+    function _deductPayment(
+        address _user,
+        bytes32 _contentId,
+        uint256 _amount
+    ) internal {
         address creator = contents[_contentId].creator;
         uint256 availableYield = vault.yieldOf(_user);
 
@@ -195,11 +256,10 @@ contract StreamingWallet is Ownable {
                 vault.withdraw(availableYield, creator, _user);
                 emit PaymentDeducted(_user, _contentId, availableYield, true);
             }
-            
+
             uint256 remainingAmount = _amount - availableYield;
             vault.withdraw(remainingAmount, creator, _user);
             emit PaymentDeducted(_user, _contentId, remainingAmount, false);
         }
     }
 }
-

@@ -12,7 +12,6 @@ import {
   parseUnits,
   formatUnits,
   keccak256,
-  toBytes,
   stringToBytes,
 } from 'viem';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
@@ -30,15 +29,18 @@ import {
 
 // --- TYPES ---
 type Content = {
-  id: string; // uuid
+  // On-chain data (always available)
   idBytes32: `0x${string}`;
-  title: string;
-  description: string;
   price: number;
   duration: number; // in seconds
-  metadataCid: string;
-  videoCid: string;
   creator: `0x${string}`;
+  metadataCid: string;
+
+  // Off-chain metadata (loaded asynchronously)
+  id?: string; // uuid
+  title?: string;
+  description?: string;
+  videoCid?: string;
 };
 
 // --- HELPER & CHILD COMPONENTS ---
@@ -110,7 +112,7 @@ const AddContentModal = ({
 }: {
   isOpen: boolean;
   onClose: () => void;
-  onContentListed: (newContent: Content) => void;
+  onContentListed: () => void;
 }) => {
   const LIGHTHOUSE_API_KEY =
     process.env.NEXT_PUBLIC_LIGHTHOUSE_API_KEY ||
@@ -130,6 +132,7 @@ const AddContentModal = ({
   useEffect(() => {
     if (isConfirmed) {
       alert('Content successfully listed on-chain!');
+      onContentListed(); // Callback to trigger refetch
       handleClose();
     }
   }, [isConfirmed]);
@@ -166,11 +169,9 @@ const AddContentModal = ({
     }
 
     try {
-      // 1. Get Video Duration
       setUploadingStatus('Getting video duration...');
       const duration = await getVideoDuration(videoFile[0]);
 
-      // 2. Upload Video to Lighthouse
       setUploadingStatus('Uploading video to Filecoin via Lighthouse...');
       const videoUploadResult = await lighthouse.upload(
         videoFile,
@@ -178,7 +179,6 @@ const AddContentModal = ({
       );
       const videoCid = videoUploadResult.data.Hash;
 
-      // 3. Create and Upload Metadata
       setUploadingStatus('Uploading metadata...');
       const newContentId = uuidv4();
       const metadata = {
@@ -197,7 +197,6 @@ const AddContentModal = ({
       );
       const metadataCid = metadataUploadResult.data.Hash;
 
-      // 4. List on Smart Contract
       setUploadingStatus(
         'Waiting for you to confirm the on-chain transaction...'
       );
@@ -215,19 +214,6 @@ const AddContentModal = ({
           address,
         ],
       });
-
-      const newContentForState: Content = {
-        id: newContentId,
-        idBytes32: newContentIdBytes32,
-        title,
-        description: metadata.description,
-        price: parseFloat(price),
-        duration,
-        metadataCid,
-        videoCid,
-        creator: address,
-      };
-      onContentListed(newContentForState);
     } catch (err) {
       console.error(err);
       setUploadingStatus(`Error: ${(err as Error).message}`);
@@ -236,15 +222,12 @@ const AddContentModal = ({
   };
 
   if (!isOpen) return null;
-
-  const isUploading =
-    !!uploadingStatus && !isPending && !isConfirming && !isConfirmed;
+  const isUploading = !!uploadingStatus && !isPending && !isConfirming && !isConfirmed;
 
   return (
     <div className='fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50'>
       <div className='bg-gray-800 p-8 rounded-lg w-full max-w-md border border-cyan-500'>
         <h2 className='text-2xl font-bold mb-6'>Add New Content</h2>
-
         <div className='space-y-4'>
           <input
             type='text'
@@ -267,7 +250,6 @@ const AddContentModal = ({
             className='w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-cyan-600 file:text-white hover:file:bg-cyan-700'
           />
         </div>
-
         <div className='mt-6'>
           {isUploading || isPending || isConfirming ? (
             <div className='text-center p-4 bg-gray-700 rounded-lg'>
@@ -293,14 +275,12 @@ const AddContentModal = ({
             </button>
           )}
         </div>
-
         <TransactionStatus
           hash={hash}
           isConfirming={isConfirming}
           isConfirmed={isConfirmed}
           error={error}
         />
-
         <button
           onClick={handleClose}
           className='w-full mt-4 px-6 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg text-sm'
@@ -312,11 +292,12 @@ const AddContentModal = ({
   );
 };
 
+
 // --- MAIN PAGE COMPONENT ---
 
 export default function StreamingPage() {
   // --- Constants & Refs ---
-  const CONTRACT_OWNER_ADDRESS = '0xE9211a464235cDFbec618d18b716Ae2fF47Ddc43';
+  const CONTRACT_OWNER_ADDRESS = '0x58c291D788be8fF99CC5565D41970f67A7CDF33D';
   const MOCK_USDC_DECIMALS = 6;
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -328,11 +309,10 @@ export default function StreamingPage() {
   const [timeWatched, setTimeWatched] = useState(0);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [allContentIds, setAllContentIds] = useState<`0x${string}`[]>([]);
+  const [allContents, setAllContents] = useState<Content[]>([]);
   const [selectedContent, setSelectedContent] = useState<Content | null>(null);
-  const [pendingStreamStart, setPendingStreamStart] = useState<Content | null>(
-    null
-  );
+  const [pendingStreamStart, setPendingStreamStart] = useState(false);
+  const [isContentLoading, setIsContentLoading] = useState(true);
 
   // --- WAGMI Hooks ---
   const { address, isConnected } = useAccount();
@@ -360,6 +340,7 @@ export default function StreamingPage() {
       args: [address as `0x${string}`, YIELD_VAULT_ADDRESS],
       query: { enabled: isConnected },
     });
+
   const { data: principalBalance, refetch: refetchPrincipal } = useReadContract(
     {
       address: YIELD_VAULT_ADDRESS,
@@ -369,6 +350,7 @@ export default function StreamingPage() {
       query: { enabled: isConnected },
     }
   );
+
   const { data: yieldBalance, refetch: refetchYield } = useReadContract({
     address: YIELD_VAULT_ADDRESS,
     abi: YIELD_VAULT_ABI,
@@ -376,6 +358,7 @@ export default function StreamingPage() {
     args: [address as `0x${string}`],
     query: { enabled: isConnected },
   });
+
   const {
     data: streamingWalletAllowance,
     refetch: refetchStreamingWalletAllowance,
@@ -387,43 +370,120 @@ export default function StreamingPage() {
     query: { enabled: isConnected },
   });
 
-  const { data: fetchedContentsData, refetch: refetchAllContents } =
-    useReadContracts({
-      contracts: allContentIds.map((id) => ({
+  // STEP 1: Get the list of all content IDs from the smart contract.
+  const { data: allContentIds, error: contentIdsError, isLoading: contentIdsLoading, refetch: refetchContentIds } = useReadContract({
+    address: STREAMING_WALLET_ADDRESS,
+    abi: STREAMING_WALLET_ABI,
+    functionName: 'getAllContentIds',
+    query: { enabled: isConnected },
+  });
+
+  // STEP 2: For each ID, get the on-chain struct data.
+  const { data: fetchedContentsData } = useReadContracts({
+      contracts: (allContentIds as `0x${string}`[] || []).map((id) => ({
         address: STREAMING_WALLET_ADDRESS,
         abi: STREAMING_WALLET_ABI,
         functionName: 'contents',
         args: [id],
       })),
-      query: { enabled: allContentIds.length > 0 },
-    });
+      query: { enabled: !!allContentIds && (allContentIds as `0x${string}`[]).length > 0 },
+  });
 
-  // --- Derived State ---
-  const formattedUsdcBalance = usdcBalance
-    ? Number(formatUnits(usdcBalance as bigint, MOCK_USDC_DECIMALS)).toFixed(2)
-    : '0.00';
-  const formattedPrincipal = principalBalance
-    ? Number(
-        formatUnits(principalBalance as bigint, MOCK_USDC_DECIMALS)
-      ).toFixed(2)
-    : '0.00';
-  const formattedYield = yieldBalance
-    ? Number(formatUnits(yieldBalance as bigint, MOCK_USDC_DECIMALS)).toFixed(2)
-    : '0.00';
-  const hasDeposited = principalBalance
-    ? (principalBalance as bigint) > BigInt(0)
-    : false;
-  const needsStreamingApproval =
-    hasDeposited &&
-    (!streamingWalletAllowance ||
-      (streamingWalletAllowance as bigint) === BigInt(0));
-  const estimatedCost = selectedContent
-    ? (timeWatched / selectedContent.duration) * selectedContent.price
-    : 0;
 
   // --- Effects ---
   useEffect(() => {
-    // Handle successful confirmations
+    console.log("--- DEBUG: Data fetching effect triggered ---");
+    console.log({ isConnected, contentIdsLoading, contentIdsError, allContentIds, fetchedContentsData });
+
+    // While the first hook is running, we are loading.
+    if (contentIdsLoading) {
+      console.log("DEBUG: `getAllContentIds` is loading...");
+      setIsContentLoading(true);
+      return;
+    }
+
+    // If the first hook fails, stop and show an error (optional).
+    if (contentIdsError) {
+      console.error("DEBUG: Error fetching content IDs:", contentIdsError);
+      setIsContentLoading(false);
+      return;
+    }
+
+    // If the first hook is done and returns an empty array, we're done.
+    if (Array.isArray(allContentIds) && allContentIds.length === 0) {
+        console.log("DEBUG: `allContentIds` is an empty array. No content to display.");
+        setIsContentLoading(false);
+        setAllContents([]);
+        return;
+    }
+
+    // If we have IDs but are still waiting for the second hook to resolve.
+    if (allContentIds && !fetchedContentsData) {
+        console.log("DEBUG: Have IDs, but `fetchedContentsData` is not ready yet. Waiting...");
+        // We remain in a loading state, so no change is needed.
+        return;
+    }
+    
+    // --- STAGE 1: Process and display ON-CHAIN data immediately ---
+    if (fetchedContentsData) {
+      console.log("DEBUG: STAGE 1 - Processing on-chain data...");
+      const onChainContents: Content[] = fetchedContentsData
+          .map((contentResult, index) => {
+              if (contentResult.status === 'success' && contentResult.result) {
+                  const [, metadataUri, fullPrice, totalDuration, creator] = contentResult.result as any;
+                  return {
+                      idBytes32: (allContentIds as `0x${string}`[])[index],
+                      metadataCid: metadataUri.replace('ipfs://', ''),
+                      price: parseFloat(formatUnits(fullPrice as bigint, MOCK_USDC_DECIMALS)),
+                      duration: Number(totalDuration),
+                      creator: creator as `0x${string}`,
+                  };
+              }
+              return null;
+          })
+          .filter((c): c is Content => c !== null);
+
+      console.log("DEBUG: Processed on-chain contents:", onChainContents);
+      setAllContents(onChainContents);
+      console.log("DEBUG: Setting isContentLoading to false.");
+      setIsContentLoading(false); // <-- Stop loading, show basic cards now!
+
+      // --- STAGE 2: Asynchronously "enrich" the UI with OFF-CHAIN metadata ---
+      console.log("DEBUG: STAGE 2 - Enriching with off-chain metadata...");
+      onChainContents.forEach(async (baseContent) => {
+          try {
+              console.log(`DEBUG: Fetching metadata for CID: ${baseContent.metadataCid}`);
+              const metaResponse = await fetch(`https://gateway.lighthouse.storage/ipfs/${baseContent.metadataCid}`);
+              if (!metaResponse.ok) {
+                console.error(`DEBUG: Failed to fetch metadata for ${baseContent.metadataCid}. Status: ${metaResponse.status}`);
+                return; // Skip if metadata not found
+              }
+              const metadata = await metaResponse.json();
+              console.log(`DEBUG: Successfully fetched metadata for ${baseContent.metadataCid}:`, metadata);
+              
+              // Find the content in our state and update it with the new details.
+              setAllContents(prevContents =>
+                  prevContents.map(prevContent =>
+                      prevContent.idBytes32 === baseContent.idBytes32
+                          ? {
+                                ...prevContent,
+                                id: metadata.id,
+                                title: metadata.title,
+                                description: metadata.description,
+                                videoCid: metadata.video.replace('ipfs://', ''),
+                            }
+                          : prevContent
+                  )
+              );
+          } catch (e) {
+              console.error("DEBUG: Error fetching or parsing metadata for", baseContent.metadataCid, e);
+          }
+      });
+    }
+  }, [isConnected, allContentIds, contentIdsLoading, contentIdsError, fetchedContentsData]); // This effect now depends on all relevant data points
+
+
+  useEffect(() => {
     if (isConfirmed) {
       if (pendingAction === 'mint' && isOwner) {
         handleApproveForYield();
@@ -432,26 +492,20 @@ export default function StreamingPage() {
       } else if (pendingAction === 'addYield') {
         setPendingAction(null);
       }
-
       if (pendingStreamStart) {
         setIsStreamActive(true);
-        if (videoRef.current) {
-          videoRef.current.play();
-        }
-        setPendingStreamStart(null);
+        if (videoRef.current) videoRef.current.play();
+        setPendingStreamStart(false);
       }
-
       refetchAllData();
     }
-
-    // Handle errors
     if (error && pendingStreamStart) {
       alert(
         `Failed to start the stream: ${
           (error as any).shortMessage || error.message
         }`
       );
-      setPendingStreamStart(null);
+      setPendingStreamStart(false);
     }
   }, [isConfirmed, error]);
 
@@ -469,10 +523,13 @@ export default function StreamingPage() {
     };
   }, [isStreamActive]);
 
-  const handleContentListed = (newContent: Content) => {
-    setAllContentIds((prev) => [...prev, newContent.idBytes32]);
-    refetchAllContents();
-  };
+  useEffect(() => {
+    if (selectedContent && videoRef.current) {
+      videoRef.current.load();
+      setTimeWatched(0);
+      setIsStreamActive(false);
+    }
+  }, [selectedContent]);
 
   // --- Contract Interaction Functions ---
   const refetchAllData = () => {
@@ -481,7 +538,11 @@ export default function StreamingPage() {
     refetchPrincipal();
     refetchYield();
     refetchStreamingWalletAllowance();
-    refetchAllContents();
+    refetchContentIds();
+  };
+
+  const handleContentListed = () => {
+    refetchContentIds();
   };
 
   const handleMint = () => {
@@ -495,6 +556,7 @@ export default function StreamingPage() {
       args: [address, parseUnits('100', MOCK_USDC_DECIMALS)],
     });
   };
+
   const handleApproveForYield = () => {
     setPendingAction('approveYield');
     writeContract({
@@ -504,6 +566,7 @@ export default function StreamingPage() {
       args: [YIELD_VAULT_ADDRESS, parseUnits('20', MOCK_USDC_DECIMALS)],
     });
   };
+
   const handleAddYield = () => {
     setPendingAction('addYield');
     writeContract(
@@ -516,6 +579,7 @@ export default function StreamingPage() {
       { onSuccess: () => setPendingAction(null) }
     );
   };
+
   const handleApprove = () => {
     writeContract({
       address: MOCK_USDC_ADDRESS,
@@ -527,6 +591,7 @@ export default function StreamingPage() {
       ],
     });
   };
+
   const handleDeposit = () => {
     writeContract({
       address: YIELD_VAULT_ADDRESS,
@@ -535,6 +600,7 @@ export default function StreamingPage() {
       args: [parseUnits(depositAmount, MOCK_USDC_DECIMALS), address],
     });
   };
+
   const handleApproveStreaming = () => {
     const MAX_UINT256 = BigInt(
       '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
@@ -561,7 +627,7 @@ export default function StreamingPage() {
       return;
     }
 
-    setPendingStreamStart(selectedContent);
+    setPendingStreamStart(true);
     writeContract({
       address: STREAMING_WALLET_ADDRESS,
       abi: STREAMING_WALLET_ABI,
@@ -581,6 +647,7 @@ export default function StreamingPage() {
     setIsStreamActive(false);
     if (videoRef.current) videoRef.current.pause();
   };
+
   const handleStopStream = () => {
     if (!selectedContent) return;
     writeContract({
@@ -597,7 +664,27 @@ export default function StreamingPage() {
     }
   };
 
-  // --- UI Rendering ---
+  // --- Derived State & UI Rendering ---
+  const formattedUsdcBalance = usdcBalance
+    ? Number(formatUnits(usdcBalance as bigint, MOCK_USDC_DECIMALS)).toFixed(2)
+    : '0.00';
+  const formattedPrincipal = principalBalance
+    ? Number(
+        formatUnits(principalBalance as bigint, MOCK_USDC_DECIMALS)
+      ).toFixed(2)
+    : '0.00';
+  const formattedYield = yieldBalance
+    ? Number(formatUnits(yieldBalance as bigint, MOCK_USDC_DECIMALS)).toFixed(2)
+    : '0.00';
+  const hasDeposited = principalBalance
+    ? (principalBalance as bigint) > BigInt(0)
+    : false;
+  const needsStreamingApproval =
+    hasDeposited &&
+    (!streamingWalletAllowance ||
+      (streamingWalletAllowance as bigint) === BigInt(0));
+  const estimatedCost = selectedContent?.duration ? (timeWatched / selectedContent.duration) * selectedContent.price : 0;
+
   const needsUsdcApproval =
     parseFloat(depositAmount) > 0 &&
     (!vaultAllowance ||
@@ -718,43 +805,29 @@ export default function StreamingPage() {
           <section className='bg-gray-800 p-6 rounded-lg'>
             <h2 className='text-xl font-semibold mb-4'>Available Content</h2>
             <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'>
-              {fetchedContentsData?.map((contentResult, index) => {
-                if (!contentResult.result) return null;
-                const [, metadataCid, fullPrice, totalDuration, creator] =
-                  contentResult.result as any;
-                // In a production app, you'd fetch the metadata JSON from IPFS to get the title.
-                // For this demo, we'll keep it simple.
-                return (
+              {isContentLoading ? (
+                <p className='text-gray-400 col-span-full'>Loading content from the blockchain...</p>
+              ) : allContents.length > 0 ? (
+                allContents.map((content, index) => (
                   <div
-                    key={index}
-                    onClick={() =>
-                      setSelectedContent({
-                        ...selectedContent,
-                        idBytes32: allContentIds[index],
-                        metadataCid: metadataCid.replace('ipfs://', ''),
-                        price: Number(
-                          formatUnits(fullPrice, MOCK_USDC_DECIMALS)
-                        ),
-                        duration: Number(totalDuration),
-                        creator,
-                        title: `Content ${index + 1}`,
-                      } as Content)
-                    }
-                    className='border-2 border-transparent hover:border-cyan-500 cursor-pointer p-4 bg-gray-700 rounded-lg'
+                    key={content.idBytes32}
+                    onClick={() => setSelectedContent(content)}
+                    className={`border-2 p-4 bg-gray-700 rounded-lg cursor-pointer transition-all ${
+                      selectedContent?.idBytes32 === content.idBytes32
+                        ? 'border-cyan-500 scale-105'
+                        : 'border-transparent hover:border-cyan-400'
+                    }`}
                   >
-                    <p className='font-bold'>Content #{index + 1}</p>
-                    <p className='text-xs text-gray-400 truncate'>
-                      Metadata: {metadataCid.replace('ipfs://', '')}
-                    </p>
-                    <p className='text-sm'>
-                      Price:{' '}
-                      {Number(formatUnits(fullPrice, MOCK_USDC_DECIMALS))} mUSDC
-                    </p>
+                    <div className="aspect-video bg-gray-800 rounded mb-2 overflow-hidden">
+                       <img src="https://i.pinimg.com/1200x/b2/39/22/b23922269a734429a6ca12a2390f5af8.jpg" alt={content.title || 'Loading title...'} className="w-full h-full object-cover"/>
+                    </div>
+                    <p className="font-bold truncate">{content.title || `Content #${index + 1}`}</p>
+                    <p className="text-sm">Price: {content.price.toFixed(2)} mUSDC</p>
+                    <p className="text-xs text-gray-400">Duration: {Math.floor(content.duration / 60)}m {content.duration % 60}s</p>
                   </div>
-                );
-              })}
-              {allContentIds.length === 0 && (
-                <p className='text-gray-400'>
+                ))
+              ) : (
+                <p className='text-gray-400 col-span-full'>
                   No content has been listed by the owner yet.
                 </p>
               )}
@@ -764,33 +837,31 @@ export default function StreamingPage() {
           {selectedContent && (
             <section className='bg-gray-800 p-6 rounded-lg'>
               <h2 className='text-xl font-semibold mb-4'>
-                Now Streaming: {selectedContent.title}
+                Now Streaming: {selectedContent.title || 'Content'}
               </h2>
               <div className='grid grid-cols-1 lg:grid-cols-3 gap-6'>
                 <div className='lg:col-span-2'>
                   <div className='aspect-video bg-black rounded-lg overflow-hidden'>
                     <video
                       ref={videoRef}
-                      src={`https://gateway.lighthouse.storage/ipfs/${
-                        selectedContent.videoCid || selectedContent.metadataCid
-                      }`}
                       controls={false}
                       className='w-full h-full'
-                    />
+                    >
+                      {selectedContent.videoCid && <source src={`https://gateway.lighthouse.storage/ipfs/${selectedContent.videoCid}`} type="video/mp4"/>}
+                       Your browser does not support the video tag.
+                    </video>
                   </div>
                 </div>
                 <div className='flex flex-col justify-between bg-gray-700 p-4 rounded-lg'>
                   <div>
-                    <h3 className='text-lg font-bold'>
-                      {selectedContent.title}
-                    </h3>
+                    <h3 className='text-lg font-bold'>{selectedContent.title || '...'}</h3>
                     <p className='text-sm text-gray-400'>
                       Total Duration:{' '}
                       {Math.floor(selectedContent.duration / 60)}m{' '}
                       {selectedContent.duration % 60}s
                     </p>
                     <p className='text-sm text-gray-400'>
-                      Full Price: ${selectedContent.price} mUSDC
+                      Full Price: ${selectedContent.price.toFixed(2)} mUSDC
                     </p>
                     {needsStreamingApproval && hasDeposited && (
                       <p className='text-sm text-yellow-400 mt-2'>
@@ -816,7 +887,8 @@ export default function StreamingPage() {
                           isPending ||
                           isStreamActive ||
                           needsStreamingApproval ||
-                          !!pendingStreamStart
+                          pendingStreamStart ||
+                          !selectedContent.videoCid
                         }
                         className='px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 rounded-lg font-semibold'
                       >
@@ -862,3 +934,6 @@ export default function StreamingPage() {
     </main>
   );
 }
+
+
+

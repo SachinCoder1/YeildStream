@@ -1,9 +1,9 @@
 // This file contains the contract addresses and ABIs for your application.
 // Keeping them in a separate file helps organize the code.
 
-export const MOCK_USDC_ADDRESS = "0xa14e377Bcf54dea7d1c746Bcbb6E8cBe486595Ca";
-export const YIELD_VAULT_ADDRESS = "0xc64eC23AA59695F7B889146b4678e3C48e02dbcB";
-export const STREAMING_WALLET_ADDRESS = "0x5B493069483553Dbfb980A3Af4e5477a4C844376";
+export const MOCK_USDC_ADDRESS = "0x4B8d65243d207fE25dCEC6f6b4776d9C399AC92c";
+export const YIELD_VAULT_ADDRESS = "0x9dE41c6c24de7121F386142e248637FbfE2746C5";
+export const STREAMING_WALLET_ADDRESS = "0xA272beF6f8d7B73f7515C9000a2cf8b0751060D1";
 
 export const MOCK_USDC_ABI = [
     {
@@ -1548,6 +1548,25 @@ export const STREAMING_WALLET_ABI = [
       "type": "event"
     },
     {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "name": "allContentIds",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
       "inputs": [],
       "name": "asset",
       "outputs": [
@@ -1594,6 +1613,19 @@ export const STREAMING_WALLET_ABI = [
           "internalType": "address payable",
           "name": "creator",
           "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getAllContentIds",
+      "outputs": [
+        {
+          "internalType": "bytes32[]",
+          "name": "",
+          "type": "bytes32[]"
         }
       ],
       "stateMutability": "view",
