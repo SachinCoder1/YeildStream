@@ -316,7 +316,7 @@ const AddContentModal = ({
 
 export default function StreamingPage() {
   // --- Constants & Refs ---
-  const CONTRACT_OWNER_ADDRESS = '0x40E2052A73b5e48680415306385A8A241B082D5D';
+  const CONTRACT_OWNER_ADDRESS = '0xE9211a464235cDFbec618d18b716Ae2fF47Ddc43';
   const MOCK_USDC_DECIMALS = 6;
 
   const videoRef = useRef<HTMLVideoElement>(null);

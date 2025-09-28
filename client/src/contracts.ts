@@ -1,9 +1,9 @@
 // This file contains the contract addresses and ABIs for your application.
 // Keeping them in a separate file helps organize the code.
 
-export const MOCK_USDC_ADDRESS = "0x46ae9Bc5EdE0c537b0123157F1AdB640BdB2f043";
-export const YIELD_VAULT_ADDRESS = "0x44e67dff66bE2c09f2D885c96194da7ba4CC6E65";
-export const STREAMING_WALLET_ADDRESS = "0xcd1D5A122cF274506bA80BE2143f013A4af69be8";
+export const MOCK_USDC_ADDRESS = "0xa14e377Bcf54dea7d1c746Bcbb6E8cBe486595Ca";
+export const YIELD_VAULT_ADDRESS = "0xc64eC23AA59695F7B889146b4678e3C48e02dbcB";
+export const STREAMING_WALLET_ADDRESS = "0x5B493069483553Dbfb980A3Af4e5477a4C844376";
 
 export const MOCK_USDC_ABI = [
     {
